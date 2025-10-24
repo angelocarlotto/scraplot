@@ -10,18 +10,18 @@ def generate_env_config():
     is_production = 'PORT' in os.environ
     
     if is_production:
-        # In production, API is on the same domain
+        # In production, use Railway's public domain
         port = os.environ.get('PORT', '8080')
-        # Railway provides RAILWAY_PUBLIC_DOMAIN or we construct it
-        public_domain = os.environ.get('RAILWAY_PUBLIC_DOMAIN', '')
+        # Railway provides RAILWAY_PUBLIC_DOMAIN or use hardcoded URL
+        public_domain = os.environ.get('RAILWAY_PUBLIC_DOMAIN', 'scraplot-production.up.railway.app')
         
         if public_domain:
             api_url = f'https://{public_domain}'
         else:
-            # Fallback: same origin
-            api_url = ''  # Empty string means same origin
+            # Fallback: use known Railway URL
+            api_url = 'https://scraplot-production.up.railway.app'
         
-        print(f"Production mode: API_URL = {api_url if api_url else 'same origin'}")
+        print(f"Production mode: API_URL = {api_url}")
     else:
         # Local development
         api_url = 'http://localhost:5001'
