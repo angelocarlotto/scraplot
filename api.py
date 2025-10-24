@@ -287,7 +287,7 @@ def scrape_single_page(url: str, page_num: int, wait_time: int, lock: threading.
         driver.quit()
 
 
-def scrape_all_auction_pages(url: str, wait_time: int = 5, max_workers: int = 10, progress_queue=None) -> dict:
+def scrape_all_auction_pages(url: str, wait_time: int = 5, max_workers: int = 1, progress_queue=None) -> dict:
     """
     Automatically discover total pages and scrape all of them
     
