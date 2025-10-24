@@ -1,9 +1,10 @@
 """
 Web API for scraping any URL
 Accepts a URL and returns scraped data in JSON format
+Also serves static files for the web interface
 """
 
-from flask import Flask, request, jsonify
+from flask import Flask, request, jsonify, send_from_directory
 from flask_cors import CORS
 from selenium import webdriver
 from selenium.webdriver.chrome.options import Options
@@ -12,11 +13,12 @@ from webdriver_manager.chrome import ChromeDriverManager
 from bs4 import BeautifulSoup
 import time
 import re
+import os
 from urllib.parse import urlparse, parse_qs, urlencode, urlunparse
 from concurrent.futures import ThreadPoolExecutor, as_completed
 import threading
 
-app = Flask(__name__)
+app = Flask(__name__, static_folder='.')
 CORS(app)  # Enable CORS for all routes
 
 
@@ -524,8 +526,22 @@ def health_check():
     })
 
 
-@app.route('/', methods=['GET'])
+@app.route('/')
 def home():
+    """Serve the main web interface"""
+    return send_from_directory('.', 'index.html')
+
+
+@app.route('/<path:path>')
+def serve_static(path):
+    """Serve static files (CSS, JS, images, etc.)"""
+    if os.path.exists(path):
+        return send_from_directory('.', path)
+    return jsonify({'error': 'File not found'}), 404
+
+
+@app.route('/api', methods=['GET'])
+def api_docs():
     """API documentation"""
     return jsonify({
         'name': 'Web Scraper API',
@@ -536,15 +552,20 @@ def home():
                 'description': 'Scrape a URL and return data in JSON format',
                 'request_body': {
                     'url': 'string (required) - URL to scrape',
-                    'wait_time': 'integer (optional) - Seconds to wait for JS rendering (default: 5)'
+                    'wait_time': 'integer (optional) - Seconds to wait for JS rendering (default: 5)',
+                    'scrape_all_pages': 'boolean (optional) - Automatically discover and scrape all pages (default: false)'
                 },
                 'example': {
                     'url': 'https://example.com',
-                    'wait_time': 5
+                    'wait_time': 5,
+                    'scrape_all_pages': True
                 }
             },
             'GET /health': {
                 'description': 'Health check endpoint'
+            },
+            'GET /api': {
+                'description': 'API documentation (this page)'
             }
         }
     })
