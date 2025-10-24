@@ -454,6 +454,7 @@
             const [error, setError] = useState('');
             const [success, setSuccess] = useState('');
             const [scrapeAllPages, setScrapeAllPages] = useState(true);
+            const [threadCount, setThreadCount] = useState(1);
             const [sortConfig, setSortConfig] = useState({ key: null, direction: 'asc' });
             const [scrapingTime, setScrapingTime] = useState(null);
             const [currentPage, setCurrentPage] = useState(1);
@@ -491,7 +492,8 @@
                         body: JSON.stringify({
                             url: url,
                             wait_time: 5,
-                            scrape_all_pages: scrapeAllPages
+                            scrape_all_pages: scrapeAllPages,
+                            max_workers: parseInt(threadCount)
                         })
                     });
 
@@ -666,6 +668,45 @@
                                 />
                                 <span>Automatically discover and scrape all pages</span>
                             </label>
+                        </div>
+
+                        <div style={{ marginBottom: '20px' }}>
+                            <label style={{ 
+                                display: 'block',
+                                fontSize: '16px',
+                                marginBottom: '8px',
+                                color: '#495057',
+                                fontWeight: '500'
+                            }}>
+                                Number of Parallel Threads:
+                            </label>
+                            <input
+                                type="number"
+                                min="1"
+                                max="20"
+                                value={threadCount}
+                                onChange={(e) => setThreadCount(Math.max(1, Math.min(20, parseInt(e.target.value) || 1)))}
+                                disabled={loading}
+                                style={{ 
+                                    width: '100px',
+                                    padding: '10px',
+                                    fontSize: '16px',
+                                    border: '2px solid #dee2e6',
+                                    borderRadius: '8px',
+                                    outline: 'none',
+                                    transition: 'border-color 0.2s'
+                                }}
+                                onFocus={(e) => e.target.style.borderColor = '#007bff'}
+                                onBlur={(e) => e.target.style.borderColor = '#dee2e6'}
+                            />
+                            <small style={{ 
+                                display: 'block', 
+                                marginTop: '5px', 
+                                color: '#6c757d',
+                                fontSize: '14px'
+                            }}>
+                                Default: 1 thread (safer for stability). Max: 20 threads.
+                            </small>
                         </div>
 
                         {data.length > 0 && (

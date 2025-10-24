@@ -56,7 +56,7 @@ def create_driver(headless=True):
         raise
 
 
-def scrape_generic_url(url: str, wait_time: int = 5, scrape_all_pages: bool = False) -> dict:
+def scrape_generic_url(url: str, wait_time: int = 5, scrape_all_pages: bool = False, max_workers: int = 1) -> dict:
     """
     Scrape any URL and return structured data
     
@@ -64,13 +64,14 @@ def scrape_generic_url(url: str, wait_time: int = 5, scrape_all_pages: bool = Fa
         url: URL to scrape
         wait_time: Time to wait for JavaScript rendering (seconds)
         scrape_all_pages: If True, automatically discover and scrape all pages
+        max_workers: Number of parallel threads for scraping multiple pages (default: 1)
         
     Returns:
         Dictionary with scraped data
     """
     # Check if it's the Regal Auctions site and scrape_all_pages is True
     if 'regalauctions.com' in url and scrape_all_pages:
-        return scrape_all_auction_pages(url, wait_time)
+        return scrape_all_auction_pages(url, wait_time, max_workers)
     
     driver = create_driver()
     
@@ -287,7 +288,7 @@ def scrape_single_page(url: str, page_num: int, wait_time: int, lock: threading.
         driver.quit()
 
 
-def scrape_all_auction_pages(url: str, wait_time: int = 5, max_workers: int = 1, progress_queue=None) -> dict:
+def scrape_all_auction_pages(url: str, wait_time: int = 30, max_workers: int = 1, progress_queue=None) -> dict:
     """
     Automatically discover total pages and scrape all of them
     
@@ -547,7 +548,8 @@ def scrape_endpoint():
     {
         "url": "https://example.com",
         "wait_time": 5,  # optional, default is 5 seconds
-        "scrape_all_pages": true  # optional, default is false, auto-discovers and scrapes all pages
+        "scrape_all_pages": true,  # optional, default is false, auto-discovers and scrapes all pages
+        "max_workers": 1  # optional, default is 1, number of parallel threads for scraping
     }
     """
     try:
@@ -562,9 +564,10 @@ def scrape_endpoint():
         url = data['url']
         wait_time = data.get('wait_time', 5)
         scrape_all_pages = data.get('scrape_all_pages', False)
+        max_workers = data.get('max_workers', 1)
         
         # Scrape the URL
-        result = scrape_generic_url(url, wait_time, scrape_all_pages)
+        result = scrape_generic_url(url, wait_time, scrape_all_pages, max_workers)
         
         return jsonify({
             'success': True,

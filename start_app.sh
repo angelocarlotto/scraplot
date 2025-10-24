@@ -5,13 +5,21 @@ echo "Starting Web Scraper Application"
 echo "========================================================================"
 echo ""
 
+# Kill any processes using ports 5001 and 8000
+echo "0. Cleaning up any existing processes on ports 5001 and 8000..."
+lsof -ti:5001 | xargs kill -9 2>/dev/null || true
+lsof -ti:8000 | xargs kill -9 2>/dev/null || true
+sleep 1
+echo "   ✓ Ports cleared"
+echo ""
+
 # Generate environment configuration
-echo "0. Generating environment configuration..."
+echo "1. Generating environment configuration..."
 python3 generate_env.py
 echo ""
 
 # Start the API server in the background
-echo "1. Starting API server on http://localhost:5001..."
+echo "2. Starting API server on http://localhost:5001..."
 /Users/angelocarlotto/Desktop/github2/scraplot/.venv/bin/python /Users/angelocarlotto/Desktop/github2/scraplot/api.py &
 API_PID=$!
 
@@ -19,12 +27,12 @@ echo "   API server started with PID: $API_PID"
 echo ""
 
 # Wait for API to start
-echo "2. Waiting for API to initialize..."
+echo "3. Waiting for API to initialize..."
 sleep 3
 echo ""
 
 # Start a simple HTTP server for the React interface
-echo "3. Starting web interface on http://localhost:8000..."
+echo "4. Starting web interface on http://localhost:8000..."
 cd /Users/angelocarlotto/Desktop/github2/scraplot
 python3 -m http.server 8000 &
 WEB_PID=$!
