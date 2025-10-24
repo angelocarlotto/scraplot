@@ -33,8 +33,19 @@ def create_driver(headless=True):
     chrome_options.add_argument('--window-size=1920,1080')
     chrome_options.add_argument('user-agent=Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36')
     
-    service = Service(ChromeDriverManager().install())
-    return webdriver.Chrome(service=service, options=chrome_options)
+    # Check if running in production (Railway) or locally
+    chrome_bin = os.environ.get('CHROME_BIN')
+    if chrome_bin:
+        # Production: use system Chrome and let webdriver-manager handle driver
+        chrome_options.binary_location = chrome_bin
+    
+    try:
+        # Let webdriver-manager download and manage the correct ChromeDriver version
+        service = Service(ChromeDriverManager().install())
+        return webdriver.Chrome(service=service, options=chrome_options)
+    except Exception as e:
+        print(f"Error creating Chrome driver: {e}")
+        raise
 
 
 def scrape_generic_url(url: str, wait_time: int = 5, scrape_all_pages: bool = False) -> dict:
