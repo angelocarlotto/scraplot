@@ -1,0 +1,567 @@
+"""
+Web API for scraping any URL
+Accepts a URL and returns scraped data in JSON format
+"""
+
+from flask import Flask, request, jsonify
+from flask_cors import CORS
+from selenium import webdriver
+from selenium.webdriver.chrome.options import Options
+from selenium.webdriver.chrome.service import Service
+from webdriver_manager.chrome import ChromeDriverManager
+from bs4 import BeautifulSoup
+import time
+import re
+from urllib.parse import urlparse, parse_qs, urlencode, urlunparse
+from concurrent.futures import ThreadPoolExecutor, as_completed
+import threading
+
+app = Flask(__name__)
+CORS(app)  # Enable CORS for all routes
+
+
+def create_driver(headless=True):
+    """Create a new Selenium WebDriver instance"""
+    chrome_options = Options()
+    if headless:
+        chrome_options.add_argument('--headless=new')
+    chrome_options.add_argument('--no-sandbox')
+    chrome_options.add_argument('--disable-dev-shm-usage')
+    chrome_options.add_argument('--disable-gpu')
+    chrome_options.add_argument('--window-size=1920,1080')
+    chrome_options.add_argument('user-agent=Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36')
+    
+    service = Service(ChromeDriverManager().install())
+    return webdriver.Chrome(service=service, options=chrome_options)
+
+
+def scrape_generic_url(url: str, wait_time: int = 5, scrape_all_pages: bool = False) -> dict:
+    """
+    Scrape any URL and return structured data
+    
+    Args:
+        url: URL to scrape
+        wait_time: Time to wait for JavaScript rendering (seconds)
+        scrape_all_pages: If True, automatically discover and scrape all pages
+        
+    Returns:
+        Dictionary with scraped data
+    """
+    # Check if it's the Regal Auctions site and scrape_all_pages is True
+    if 'regalauctions.com' in url and scrape_all_pages:
+        return scrape_all_auction_pages(url, wait_time)
+    
+    driver = create_driver()
+    
+    try:
+        driver.get(url)
+        time.sleep(wait_time)
+        
+        page_source = driver.page_source
+        soup = BeautifulSoup(page_source, 'lxml')
+        
+        # Extract basic page information
+        result = {
+            'url': url,
+            'title': soup.title.string if soup.title else '',
+            'meta_description': '',
+            'raw_html': page_source,
+            'text_content': soup.get_text(separator=' ', strip=True)[:5000],  # First 5000 chars
+            'links': [],
+            'images': [],
+            'structured_data': {}
+        }
+        
+        # Extract meta description
+        meta_desc = soup.find('meta', attrs={'name': 'description'})
+        if meta_desc:
+            result['meta_description'] = meta_desc.get('content', '')
+        
+        # Extract all links
+        for link in soup.find_all('a', href=True):
+            href = link.get('href')
+            text = link.get_text(strip=True)
+            if href:
+                result['links'].append({'url': href, 'text': text})
+        
+        # Extract all images
+        for img in soup.find_all('img'):
+            src = img.get('src', '')
+            alt = img.get('alt', '')
+            if src:
+                result['images'].append({'src': src, 'alt': alt})
+        
+        # Check if it's the Regal Auctions site and extract lot data
+        if 'regalauctions.com' in url:
+            result['structured_data'] = scrape_regal_auctions(soup, url)
+        
+        return result
+        
+    except Exception as e:
+        return {
+            'url': url,
+            'error': str(e),
+            'success': False
+        }
+    finally:
+        driver.quit()
+
+
+def discover_total_pages(base_url, wait_time=5):
+    """
+    Discover the total number of pages available on a website.
+    Returns the total number of pages found.
+    """
+    print(f"\n🔍 Discovering total pages for: {base_url}")
+    
+    driver = create_driver()
+    max_page = 1
+    
+    try:
+        driver.get(base_url)
+        time.sleep(wait_time)
+        
+        page_source = driver.page_source
+        soup = BeautifulSoup(page_source, 'html.parser')
+        
+        # Strategy 1: Look for "of X" text patterns (most reliable)
+        text_content = soup.get_text()
+        of_pattern = re.search(r'of\s+(\d+)', text_content, re.IGNORECASE)
+        if of_pattern:
+            total_pages = int(of_pattern.group(1))
+            max_page = max(max_page, total_pages)
+            print(f"   Strategy 1 ('of X' pattern): Found {total_pages} pages")
+        
+        # Strategy 2: Look for page select dropdowns
+        select_elements = soup.find_all('select')
+        for select in select_elements:
+            options = select.find_all('option')
+            for option in options:
+                try:
+                    page_num = int(option.get_text().strip())
+                    max_page = max(max_page, page_num)
+                except:
+                    pass
+        
+        if max_page > 1:
+            print(f"   Strategy 2 (select dropdown): Found {max_page} pages")
+        
+        # Strategy 3: Look for "Page X of Y" text
+        page_of_pattern = re.search(r'Page\s+\d+\s+of\s+(\d+)', text_content, re.IGNORECASE)
+        if page_of_pattern:
+            total_pages = int(page_of_pattern.group(1))
+            max_page = max(max_page, total_pages)
+            print(f"   Strategy 3 ('Page X of Y'): Found {total_pages} pages")
+        
+        # Strategy 4: Look for page links with ?page= parameter
+        all_links = soup.find_all('a', href=True)
+        for link in all_links:
+            href = link.get('href', '')
+            match = re.search(r'[?&]page=(\d+)', href)
+            if match:
+                page_num = int(match.group(1))
+                max_page = max(max_page, page_num)
+        
+        if max_page > 1:
+            print(f"   Strategy 4 (URL params): Found max page {max_page}")
+        
+        # Strategy 5: Look for pagination navigation elements
+        pagination = soup.find('nav', {'class': re.compile('pagination', re.IGNORECASE)})
+        if not pagination:
+            pagination = soup.find('div', {'class': re.compile('pagination', re.IGNORECASE)})
+        
+        if pagination:
+            page_links = pagination.find_all('a')
+            for link in page_links:
+                try:
+                    page_num = int(link.get_text().strip())
+                    max_page = max(max_page, page_num)
+                except:
+                    pass
+            if max_page > 1:
+                print(f"   Strategy 5 (pagination nav): Found max page {max_page}")
+        
+        print(f"✅ Total pages discovered: {max_page}\n")
+        return max_page
+        
+    except Exception as e:
+        print(f"❌ Error discovering pages: {str(e)}")
+        return 1
+    finally:
+        driver.quit()
+
+
+def scrape_single_page(url: str, page_num: int, wait_time: int, lock: threading.Lock) -> list:
+    """
+    Scrape a single page and return lots
+    
+    Args:
+        url: Base URL
+        page_num: Page number to scrape
+        wait_time: Wait time for JavaScript
+        lock: Thread lock for console output
+        
+    Returns:
+        List of lots from the page
+    """
+    driver = create_driver()
+    
+    try:
+        # Construct page URL
+        parsed = urlparse(url)
+        query_params = parse_qs(parsed.query)
+        query_params['page'] = [str(page_num)]
+        new_query = urlencode(query_params, doseq=True)
+        page_url = urlunparse((
+            parsed.scheme,
+            parsed.netloc,
+            parsed.path,
+            parsed.params,
+            new_query,
+            parsed.fragment
+        ))
+        
+        with lock:
+            print(f"[Thread] Scraping page {page_num}: {page_url}")
+        
+        driver.get(page_url)
+        time.sleep(wait_time)
+        
+        page_source = driver.page_source
+        soup = BeautifulSoup(page_source, 'lxml')
+        
+        # Extract lots
+        lot_items = soup.find_all('div', class_='lot-card')
+        lots = []
+        
+        for item in lot_items:
+            lot_data = extract_lot_from_element(item)
+            if lot_data and (lot_data.get('lot_number') or lot_data.get('title')):
+                lot_data['page'] = page_num
+                lots.append(lot_data)
+        
+        with lock:
+            print(f"[Thread] Page {page_num}: Found {len(lots)} lots")
+        
+        return lots
+        
+    except Exception as e:
+        with lock:
+            print(f"[Thread] Error on page {page_num}: {e}")
+        return []
+    finally:
+        driver.quit()
+
+
+def scrape_all_auction_pages(url: str, wait_time: int = 5, max_workers: int = 10) -> dict:
+    """
+    Automatically discover total pages and scrape all of them
+    
+    Args:
+        url: Base URL to scrape
+        wait_time: Wait time for JavaScript
+        max_workers: Maximum concurrent threads
+        
+    Returns:
+        Dictionary with all scraped data
+    """
+    print(f"Discovering total pages for: {url}")
+    total_pages = discover_total_pages(url, wait_time)
+    print(f"Found {total_pages} pages to scrape")
+    
+    all_lots = []
+    lock = threading.Lock()
+    
+    print(f"Starting parallel scraping with {max_workers} threads...")
+    
+    start_time = time.time()
+    
+    # Use ThreadPoolExecutor for parallel scraping
+    with ThreadPoolExecutor(max_workers=max_workers) as executor:
+        futures = {
+            executor.submit(scrape_single_page, url, page, wait_time, lock): page 
+            for page in range(1, total_pages + 1)
+        }
+        
+        for future in as_completed(futures):
+            page = futures[future]
+            try:
+                lots = future.result()
+                with lock:
+                    all_lots.extend(lots)
+            except Exception as e:
+                print(f"Exception for page {page}: {e}")
+    
+    elapsed_time = time.time() - start_time
+    
+    print(f"Scraping completed in {elapsed_time:.2f} seconds")
+    print(f"Total lots scraped: {len(all_lots)}")
+    
+    return {
+        'type': 'regal_auctions',
+        'total_pages': total_pages,
+        'total_lots': len(all_lots),
+        'scraping_time': f"{elapsed_time:.2f}s",
+        'lots': all_lots
+    }
+
+
+def extract_lot_from_element(item) -> dict:
+    """Extract lot data from a BeautifulSoup element"""
+    try:
+        # Extract lot number
+        lot_number_elem = item.find('div', class_='lot-number')
+        lot_number = lot_number_elem.find('strong').get_text(strip=True) if lot_number_elem and lot_number_elem.find('strong') else ""
+        
+        # Extract title
+        title_elem = item.find('div', class_='lot__name')
+        title = title_elem.get_text(strip=True) if title_elem else ""
+        
+        # Extract description
+        desc_elem = item.find('div', class_='lot__description')
+        description = desc_elem.get_text(strip=True) if desc_elem else ""
+        
+        # Extract image
+        img_elem = item.find('img')
+        image_url = img_elem.get('src', '') if img_elem else ""
+        
+        # Extract link
+        link_elem = desc_elem.find('a') if desc_elem else None
+        lot_url = link_elem.get('href', '') if link_elem else ""
+        
+        # Extract bidding info
+        bid_elem = item.find('div', class_='lot__bidding')
+        starting_bid = ""
+        if bid_elem:
+            bid_match = bid_elem.find('span', class_='fs-4')
+            if bid_match:
+                starting_bid = bid_match.get_text(strip=True)
+        
+        # Extract table data
+        odometer = ""
+        engine = ""
+        declarations = ""
+        options = ""
+        reserve_price = ""
+        
+        if desc_elem:
+            table = desc_elem.find('table')
+            if table:
+                rows = table.find_all('tr')
+                for row in rows:
+                    cells = row.find_all('td')
+                    if len(cells) >= 2:
+                        key = cells[0].get_text(strip=True).upper()
+                        value = cells[1].get_text(strip=True)
+                        
+                        if 'ODOMETER' in key:
+                            odometer = value
+                        elif 'ENGINE' in key:
+                            engine = value
+                        elif 'DECLARATION' in key:
+                            declarations = value
+                        elif 'OPTIONS' in key:
+                            options = value
+                        elif 'RESERVE' in key:
+                            reserve_price = value
+        
+        return {
+            'lot_number': lot_number,
+            'title': title,
+            'description': description[:500],
+            'image_url': image_url,
+            'lot_url': lot_url,
+            'starting_bid': starting_bid,
+            'reserve_price': reserve_price,
+            'odometer': odometer,
+            'engine': engine,
+            'declarations': declarations,
+            'options': options,
+        }
+    except Exception as e:
+        return {}
+
+
+def scrape_regal_auctions(soup: BeautifulSoup, url: str) -> dict:
+    """Extract structured data from Regal Auctions pages"""
+    lots = []
+    
+    # Find all lot cards
+    lot_items = soup.find_all('div', class_='lot-card')
+    
+    for item in lot_items:
+        try:
+            # Extract lot number
+            lot_number_elem = item.find('div', class_='lot-number')
+            lot_number = lot_number_elem.find('strong').get_text(strip=True) if lot_number_elem and lot_number_elem.find('strong') else ""
+            
+            # Extract title
+            title_elem = item.find('div', class_='lot__name')
+            title = title_elem.get_text(strip=True) if title_elem else ""
+            
+            # Extract description
+            desc_elem = item.find('div', class_='lot__description')
+            description = desc_elem.get_text(strip=True) if desc_elem else ""
+            
+            # Extract image
+            img_elem = item.find('img')
+            image_url = img_elem.get('src', '') if img_elem else ""
+            
+            # Extract link
+            link_elem = desc_elem.find('a') if desc_elem else None
+            lot_url = link_elem.get('href', '') if link_elem else ""
+            
+            # Extract bidding info
+            bid_elem = item.find('div', class_='lot__bidding')
+            starting_bid = ""
+            if bid_elem:
+                bid_match = bid_elem.find('span', class_='fs-4')
+                if bid_match:
+                    starting_bid = bid_match.get_text(strip=True)
+            
+            # Extract table data
+            odometer = ""
+            engine = ""
+            declarations = ""
+            options = ""
+            reserve_price = ""
+            
+            if desc_elem:
+                table = desc_elem.find('table')
+                if table:
+                    rows = table.find_all('tr')
+                    for row in rows:
+                        cells = row.find_all('td')
+                        if len(cells) >= 2:
+                            key = cells[0].get_text(strip=True).upper()
+                            value = cells[1].get_text(strip=True)
+                            
+                            if 'ODOMETER' in key:
+                                odometer = value
+                            elif 'ENGINE' in key:
+                                engine = value
+                            elif 'DECLARATION' in key:
+                                declarations = value
+                            elif 'OPTIONS' in key:
+                                options = value
+                            elif 'RESERVE' in key:
+                                reserve_price = value
+            
+            lot_data = {
+                'lot_number': lot_number,
+                'title': title,
+                'description': description[:500],
+                'image_url': image_url,
+                'lot_url': lot_url,
+                'starting_bid': starting_bid,
+                'reserve_price': reserve_price,
+                'odometer': odometer,
+                'engine': engine,
+                'declarations': declarations,
+                'options': options,
+            }
+            
+            if lot_data['lot_number'] or lot_data['title']:
+                lots.append(lot_data)
+                
+        except Exception as e:
+            continue
+    
+    return {
+        'type': 'regal_auctions',
+        'total_lots': len(lots),
+        'lots': lots
+    }
+
+
+@app.route('/scrape', methods=['POST'])
+def scrape_endpoint():
+    """
+    Scrape a URL and return structured data
+    
+    Request body:
+    {
+        "url": "https://example.com",
+        "wait_time": 5,  # optional, default is 5 seconds
+        "scrape_all_pages": true  # optional, default is false, auto-discovers and scrapes all pages
+    }
+    """
+    try:
+        data = request.get_json()
+        
+        if not data or 'url' not in data:
+            return jsonify({
+                'success': False,
+                'error': 'URL is required in request body'
+            }), 400
+        
+        url = data['url']
+        wait_time = data.get('wait_time', 5)
+        scrape_all_pages = data.get('scrape_all_pages', False)
+        
+        # Scrape the URL
+        result = scrape_generic_url(url, wait_time, scrape_all_pages)
+        
+        return jsonify({
+            'success': True,
+            'data': result
+        })
+        
+    except Exception as e:
+        return jsonify({
+            'success': False,
+            'error': str(e)
+        }), 500
+
+
+@app.route('/health', methods=['GET'])
+def health_check():
+    """Health check endpoint"""
+    return jsonify({
+        'status': 'healthy',
+        'service': 'Web Scraper API',
+        'version': '1.0.0'
+    })
+
+
+@app.route('/', methods=['GET'])
+def home():
+    """API documentation"""
+    return jsonify({
+        'name': 'Web Scraper API',
+        'version': '1.0.0',
+        'description': 'API to scrape any URL and return structured data',
+        'endpoints': {
+            'POST /scrape': {
+                'description': 'Scrape a URL and return data in JSON format',
+                'request_body': {
+                    'url': 'string (required) - URL to scrape',
+                    'wait_time': 'integer (optional) - Seconds to wait for JS rendering (default: 5)'
+                },
+                'example': {
+                    'url': 'https://example.com',
+                    'wait_time': 5
+                }
+            },
+            'GET /health': {
+                'description': 'Health check endpoint'
+            }
+        }
+    })
+
+
+if __name__ == '__main__':
+    print("="*70)
+    print("Starting Web Scraper API...")
+    print("="*70)
+    print("API Endpoints:")
+    print("  GET  /         - API documentation")
+    print("  GET  /health   - Health check")
+    print("  POST /scrape   - Scrape a URL")
+    print("="*70)
+    print("\nExample usage:")
+    print('  curl -X POST http://localhost:5001/scrape \\')
+    print('    -H "Content-Type: application/json" \\')
+    print('    -d \'{"url": "https://example.com"}\'')
+    print("="*70)
+    app.run(debug=True, host='0.0.0.0', port=5001)

@@ -1,0 +1,878 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Web Scraper Interface</title>
+    <script crossorigin src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+    <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+    <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', 'Oxygen', 'Ubuntu', 'Cantarell', sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            padding: 20px;
+        }
+
+        .container {
+            max-width: 1400px;
+            margin: 0 auto;
+            background: white;
+            border-radius: 20px;
+            box-shadow: 0 20px 60px rgba(0, 0, 0, 0.3);
+            overflow: hidden;
+        }
+
+        .header {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            padding: 30px;
+            text-align: center;
+        }
+
+        .header h1 {
+            font-size: 2.5em;
+            margin-bottom: 10px;
+        }
+
+        .header p {
+            opacity: 0.9;
+            font-size: 1.1em;
+        }
+
+        .input-section {
+            padding: 30px;
+            background: #f8f9fa;
+            border-bottom: 2px solid #e9ecef;
+        }
+
+        .url-input-group {
+            display: flex;
+            gap: 15px;
+            margin-bottom: 20px;
+        }
+
+        .url-input {
+            flex: 1;
+            padding: 15px 20px;
+            font-size: 16px;
+            border: 2px solid #dee2e6;
+            border-radius: 10px;
+            outline: none;
+            transition: all 0.3s;
+        }
+
+        .url-input:focus {
+            border-color: #667eea;
+            box-shadow: 0 0 0 3px rgba(102, 126, 234, 0.1);
+        }
+
+        .scrape-btn {
+            padding: 15px 40px;
+            font-size: 16px;
+            font-weight: 600;
+            color: white;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            border: none;
+            border-radius: 10px;
+            cursor: pointer;
+            transition: all 0.3s;
+            box-shadow: 0 4px 15px rgba(102, 126, 234, 0.4);
+        }
+
+        .scrape-btn:hover:not(:disabled) {
+            transform: translateY(-2px);
+            box-shadow: 0 6px 20px rgba(102, 126, 234, 0.6);
+        }
+
+        .scrape-btn:disabled {
+            opacity: 0.6;
+            cursor: not-allowed;
+        }
+
+        .filters {
+            display: flex;
+            gap: 15px;
+            flex-wrap: wrap;
+        }
+
+        .filter-input {
+            flex: 1;
+            min-width: 200px;
+            padding: 10px 15px;
+            border: 2px solid #dee2e6;
+            border-radius: 8px;
+            font-size: 14px;
+            outline: none;
+        }
+
+        .filter-input:focus {
+            border-color: #667eea;
+        }
+
+        .status {
+            padding: 20px 30px;
+            text-align: center;
+            font-size: 16px;
+        }
+
+        .status.loading {
+            color: #667eea;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 10px;
+        }
+
+        .status.success {
+            color: #28a745;
+            font-weight: 600;
+        }
+
+        .status.error {
+            color: #dc3545;
+            font-weight: 600;
+        }
+
+        .spinner {
+            border: 3px solid #f3f3f3;
+            border-top: 3px solid #667eea;
+            border-radius: 50%;
+            width: 30px;
+            height: 30px;
+            animation: spin 1s linear infinite;
+        }
+
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+
+        .table-container {
+            padding: 30px;
+            overflow-x: auto;
+        }
+
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            font-size: 14px;
+        }
+
+        thead {
+            background: #f8f9fa;
+            position: sticky;
+            top: 0;
+            z-index: 10;
+        }
+
+        th {
+            padding: 15px;
+            text-align: left;
+            font-weight: 600;
+            color: #495057;
+            border-bottom: 2px solid #dee2e6;
+            cursor: pointer;
+            user-select: none;
+            white-space: nowrap;
+        }
+
+        th:hover {
+            background: #e9ecef;
+        }
+
+        th.sortable::after {
+            content: ' ⇅';
+            opacity: 0.3;
+        }
+
+        th.sorted-asc::after {
+            content: ' ↑';
+            opacity: 1;
+            color: #667eea;
+        }
+
+        th.sorted-desc::after {
+            content: ' ↓';
+            opacity: 1;
+            color: #667eea;
+        }
+
+        td {
+            padding: 15px;
+            border-bottom: 1px solid #e9ecef;
+        }
+
+        tbody tr:hover {
+            background: #f8f9fa;
+        }
+
+        .lot-number {
+            font-weight: 600;
+            color: #667eea;
+        }
+
+        .price {
+            color: #28a745;
+            font-weight: 600;
+        }
+
+        .link-cell a {
+            color: #667eea;
+            text-decoration: none;
+            font-weight: 500;
+        }
+
+        .link-cell a:hover {
+            text-decoration: underline;
+        }
+
+        .thumbnail-cell {
+            padding: 10px;
+        }
+
+        .thumbnail-image {
+            width: 80px;
+            height: 60px;
+            object-fit: cover;
+            border-radius: 6px;
+            cursor: pointer;
+            transition: transform 0.2s;
+        }
+
+        .thumbnail-image:hover {
+            transform: scale(1.5);
+            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
+            z-index: 100;
+            position: relative;
+        }
+
+        .no-image {
+            width: 80px;
+            height: 60px;
+            background: #e9ecef;
+            border-radius: 6px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            color: #adb5bd;
+            font-size: 24px;
+        }
+
+        .truncate {
+            max-width: 300px;
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+        }
+
+        .stats {
+            padding: 20px 30px;
+            background: #f8f9fa;
+            border-top: 2px solid #e9ecef;
+            display: flex;
+            justify-content: space-around;
+            flex-wrap: wrap;
+            gap: 20px;
+        }
+
+        .stat-item {
+            text-align: center;
+        }
+
+        .stat-value {
+            font-size: 2em;
+            font-weight: 700;
+            color: #667eea;
+        }
+
+        .stat-label {
+            color: #6c757d;
+            font-size: 0.9em;
+            margin-top: 5px;
+        }
+
+        .empty-state {
+            padding: 60px 30px;
+            text-align: center;
+            color: #6c757d;
+        }
+
+        .empty-state-icon {
+            font-size: 4em;
+            margin-bottom: 20px;
+            opacity: 0.3;
+        }
+
+        .download-btn {
+            padding: 12px 30px;
+            font-size: 15px;
+            font-weight: 600;
+            color: white;
+            background: linear-gradient(135deg, #28a745 0%, #20c997 100%);
+            border: none;
+            border-radius: 10px;
+            cursor: pointer;
+            transition: all 0.3s;
+            box-shadow: 0 4px 15px rgba(40, 167, 69, 0.4);
+            display: inline-flex;
+            align-items: center;
+            gap: 8px;
+        }
+
+        .download-btn:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 6px 20px rgba(40, 167, 69, 0.6);
+        }
+
+        .timer-display {
+            display: inline-flex;
+            align-items: center;
+            gap: 8px;
+            padding: 8px 16px;
+            background: #f8f9fa;
+            border-radius: 8px;
+            font-weight: 600;
+            color: #495057;
+            font-size: 14px;
+        }
+
+        .pagination-controls {
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            gap: 20px;
+            padding: 20px;
+            flex-wrap: wrap;
+        }
+
+        .pagination-buttons {
+            display: flex;
+            gap: 10px;
+            align-items: center;
+        }
+
+        .page-btn {
+            padding: 8px 16px;
+            background: #667eea;
+            color: white;
+            border: none;
+            border-radius: 6px;
+            cursor: pointer;
+            font-weight: 600;
+            transition: all 0.2s;
+        }
+
+        .page-btn:hover:not(:disabled) {
+            background: #5568d3;
+            transform: translateY(-1px);
+        }
+
+        .page-btn:disabled {
+            background: #dee2e6;
+            cursor: not-allowed;
+        }
+
+        .page-info {
+            font-weight: 600;
+            color: #495057;
+        }
+
+        .items-per-page {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+
+        .items-per-page select {
+            padding: 8px 12px;
+            border: 2px solid #dee2e6;
+            border-radius: 6px;
+            font-size: 14px;
+            font-weight: 600;
+            color: #495057;
+            cursor: pointer;
+            outline: none;
+        }
+
+        .items-per-page select:focus {
+            border-color: #667eea;
+        }
+
+        .controls-row {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 20px 30px;
+            background: #f8f9fa;
+            border-top: 2px solid #e9ecef;
+            flex-wrap: wrap;
+            gap: 15px;
+        }
+
+        @media (max-width: 768px) {
+            .header h1 {
+                font-size: 1.8em;
+            }
+
+            .url-input-group {
+                flex-direction: column;
+            }
+
+            .filters {
+                flex-direction: column;
+            }
+
+            .table-container {
+                padding: 15px;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div id="root"></div>
+
+    <script type="text/babel">
+        const { useState, useEffect, useMemo } = React;
+
+        function App() {
+            const [url, setUrl] = useState('https://bids.regalauctions.com/auctions/1778628/lots?date=2025-10-24&page=1');
+            const [data, setData] = useState([]);
+            const [loading, setLoading] = useState(false);
+            const [error, setError] = useState('');
+            const [success, setSuccess] = useState('');
+            const [scrapeAllPages, setScrapeAllPages] = useState(true);
+            const [sortConfig, setSortConfig] = useState({ key: null, direction: 'asc' });
+            const [scrapingTime, setScrapingTime] = useState(null);
+            const [currentPage, setCurrentPage] = useState(1);
+            const [itemsPerPage, setItemsPerPage] = useState(20);
+            const [filters, setFilters] = useState({
+                lotNumber: '',
+                title: '',
+                minPrice: '',
+                maxPrice: ''
+            });
+
+            const handleScrape = async () => {
+                if (!url.trim()) {
+                    setError('Please enter a URL');
+                    return;
+                }
+
+                setLoading(true);
+                setError('');
+                setSuccess('');
+                setData([]);
+                setScrapingTime(null);
+                setCurrentPage(1);
+
+                const startTime = Date.now();
+
+                try {
+                    const response = await fetch('http://localhost:5001/scrape', {
+                        method: 'POST',
+                        headers: {
+                            'Content-Type': 'application/json',
+                        },
+                        body: JSON.stringify({
+                            url: url,
+                            wait_time: 5,
+                            scrape_all_pages: scrapeAllPages
+                        })
+                    });
+
+                    const result = await response.json();
+                    const endTime = Date.now();
+                    const elapsed = ((endTime - startTime) / 1000).toFixed(2);
+                    setScrapingTime(elapsed);
+
+                    if (result.success) {
+                        // Handle both nested and flat response structures
+                        const data = result.data.structured_data || result.data;
+                        const scrapedData = data.lots || [];
+                        const totalPages = data.total_pages || 1;
+                        const scrapingTime = data.scraping_time || 'N/A';
+                        setData(scrapedData);
+                        setSuccess(`Successfully scraped ${scrapedData.length} items from ${totalPages} page(s) in ${scrapingTime}!`);
+                    } else {
+                        setError(result.error || 'Failed to scrape data');
+                    }
+                } catch (err) {
+                    setError('Failed to connect to API. Make sure the API server is running on port 5001.');
+                    const endTime = Date.now();
+                    const elapsed = ((endTime - startTime) / 1000).toFixed(2);
+                    setScrapingTime(elapsed);
+                } finally {
+                    setLoading(false);
+                }
+            };
+
+            const handleSort = (key) => {
+                let direction = 'asc';
+                if (sortConfig.key === key && sortConfig.direction === 'asc') {
+                    direction = 'desc';
+                }
+                setSortConfig({ key, direction });
+            };
+
+            const downloadJSON = () => {
+                const dataStr = JSON.stringify(data, null, 2);
+                const dataBlob = new Blob([dataStr], { type: 'application/json' });
+                const url = URL.createObjectURL(dataBlob);
+                const link = document.createElement('a');
+                link.href = url;
+                link.download = `auction_data_${new Date().toISOString().split('T')[0]}.json`;
+                document.body.appendChild(link);
+                link.click();
+                document.body.removeChild(link);
+                URL.revokeObjectURL(url);
+            };
+
+            const parsePrice = (priceStr) => {
+                if (!priceStr) return 0;
+                const match = priceStr.match(/[\d,]+/);
+                return match ? parseFloat(match[0].replace(/,/g, '')) : 0;
+            };
+
+            const filteredAndSortedData = useMemo(() => {
+                let filtered = [...data];
+
+                // Apply filters
+                if (filters.lotNumber) {
+                    filtered = filtered.filter(item =>
+                        item.lot_number?.toLowerCase().includes(filters.lotNumber.toLowerCase())
+                    );
+                }
+
+                if (filters.title) {
+                    filtered = filtered.filter(item =>
+                        item.title?.toLowerCase().includes(filters.title.toLowerCase())
+                    );
+                }
+
+                if (filters.minPrice) {
+                    const minPrice = parseFloat(filters.minPrice);
+                    filtered = filtered.filter(item => {
+                        const price = parsePrice(item.starting_bid || item.reserve_price);
+                        return price >= minPrice;
+                    });
+                }
+
+                if (filters.maxPrice) {
+                    const maxPrice = parseFloat(filters.maxPrice);
+                    filtered = filtered.filter(item => {
+                        const price = parsePrice(item.starting_bid || item.reserve_price);
+                        return price <= maxPrice;
+                    });
+                }
+
+                // Apply sorting
+                if (sortConfig.key) {
+                    filtered.sort((a, b) => {
+                        let aVal = a[sortConfig.key] || '';
+                        let bVal = b[sortConfig.key] || '';
+
+                        // Special handling for prices
+                        if (sortConfig.key === 'starting_bid' || sortConfig.key === 'reserve_price') {
+                            aVal = parsePrice(aVal);
+                            bVal = parsePrice(bVal);
+                        }
+
+                        if (aVal < bVal) return sortConfig.direction === 'asc' ? -1 : 1;
+                        if (aVal > bVal) return sortConfig.direction === 'asc' ? 1 : -1;
+                        return 0;
+                    });
+                }
+
+                return filtered;
+            }, [data, filters, sortConfig]);
+
+            // Pagination calculations
+            const totalPages = Math.ceil(filteredAndSortedData.length / (itemsPerPage === 'all' ? filteredAndSortedData.length : itemsPerPage));
+            const startIndex = itemsPerPage === 'all' ? 0 : (currentPage - 1) * itemsPerPage;
+            const endIndex = itemsPerPage === 'all' ? filteredAndSortedData.length : startIndex + itemsPerPage;
+            const paginatedData = filteredAndSortedData.slice(startIndex, endIndex);
+
+            // Reset to page 1 when filters change
+            useEffect(() => {
+                setCurrentPage(1);
+            }, [filters, sortConfig, itemsPerPage]);
+
+            const getSortClass = (key) => {
+                if (sortConfig.key !== key) return 'sortable';
+                return sortConfig.direction === 'asc' ? 'sorted-asc' : 'sorted-desc';
+            };
+
+            return (
+                <div className="container">
+                    <div className="header">
+                        <h1>🌐 Web Scraper Interface</h1>
+                        <p>Enter any URL to scrape and analyze data</p>
+                    </div>
+
+                    <div className="input-section">
+                        <div className="url-input-group">
+                            <input
+                                type="text"
+                                className="url-input"
+                                placeholder="Enter URL to scrape (e.g., https://example.com)"
+                                value={url}
+                                onChange={(e) => setUrl(e.target.value)}
+                                onKeyPress={(e) => e.key === 'Enter' && handleScrape()}
+                                disabled={loading}
+                            />
+                            <button
+                                className="scrape-btn"
+                                onClick={handleScrape}
+                                disabled={loading}
+                            >
+                                {loading ? 'Scraping...' : 'Scrape URL'}
+                            </button>
+                        </div>
+
+                        <div style={{ marginBottom: '20px' }}>
+                            <label style={{ 
+                                display: 'flex', 
+                                alignItems: 'center', 
+                                gap: '10px',
+                                fontSize: '16px',
+                                cursor: 'pointer',
+                                color: '#495057'
+                            }}>
+                                <input
+                                    type="checkbox"
+                                    checked={scrapeAllPages}
+                                    onChange={(e) => setScrapeAllPages(e.target.checked)}
+                                    disabled={loading}
+                                    style={{ 
+                                        width: '18px', 
+                                        height: '18px',
+                                        cursor: 'pointer'
+                                    }}
+                                />
+                                <span>Automatically discover and scrape all pages</span>
+                            </label>
+                        </div>
+
+                        {data.length > 0 && (
+                            <div className="filters">
+                                <input
+                                    type="text"
+                                    className="filter-input"
+                                    placeholder="Filter by Lot Number..."
+                                    value={filters.lotNumber}
+                                    onChange={(e) => setFilters({ ...filters, lotNumber: e.target.value })}
+                                />
+                                <input
+                                    type="text"
+                                    className="filter-input"
+                                    placeholder="Filter by Title..."
+                                    value={filters.title}
+                                    onChange={(e) => setFilters({ ...filters, title: e.target.value })}
+                                />
+                                <input
+                                    type="number"
+                                    className="filter-input"
+                                    placeholder="Min Price"
+                                    value={filters.minPrice}
+                                    onChange={(e) => setFilters({ ...filters, minPrice: e.target.value })}
+                                />
+                                <input
+                                    type="number"
+                                    className="filter-input"
+                                    placeholder="Max Price"
+                                    value={filters.maxPrice}
+                                    onChange={(e) => setFilters({ ...filters, maxPrice: e.target.value })}
+                                />
+                            </div>
+                        )}
+                    </div>
+
+                    {loading && (
+                        <div className="status loading">
+                            <div className="spinner"></div>
+                            <span>Scraping data from {url}...</span>
+                        </div>
+                    )}
+
+                    {success && !loading && (
+                        <div className="status success">✅ {success}</div>
+                    )}
+
+                    {error && (
+                        <div className="status error">❌ {error}</div>
+                    )}
+
+                    {scrapingTime && (
+                        <div style={{ textAlign: 'center', padding: '10px' }}>
+                            <div className="timer-display">
+                                <span>⏱️</span>
+                                <span>Total scraping time: {scrapingTime}s</span>
+                            </div>
+                        </div>
+                    )}
+
+                    {filteredAndSortedData.length > 0 ? (
+                        <>
+                            <div className="controls-row">
+                                <button className="download-btn" onClick={downloadJSON}>
+                                    <span>📥</span>
+                                    <span>Download JSON</span>
+                                </button>
+                                <div className="items-per-page">
+                                    <span>Items per page:</span>
+                                    <select 
+                                        value={itemsPerPage} 
+                                        onChange={(e) => setItemsPerPage(e.target.value === 'all' ? 'all' : parseInt(e.target.value))}
+                                    >
+                                        <option value="20">20</option>
+                                        <option value="40">40</option>
+                                        <option value="50">50</option>
+                                        <option value="100">100</option>
+                                        <option value="all">All</option>
+                                    </select>
+                                </div>
+                            </div>
+
+                            <div className="table-container">
+                                <table>
+                                    <thead>
+                                        <tr>
+                                            <th>Image</th>
+                                            <th className={getSortClass('lot_number')} onClick={() => handleSort('lot_number')}>
+                                                Lot #
+                                            </th>
+                                            <th className={getSortClass('title')} onClick={() => handleSort('title')}>
+                                                Title
+                                            </th>
+                                            <th className={getSortClass('starting_bid')} onClick={() => handleSort('starting_bid')}>
+                                                Starting Bid
+                                            </th>
+                                            <th className={getSortClass('reserve_price')} onClick={() => handleSort('reserve_price')}>
+                                                Reserve Price
+                                            </th>
+                                            <th className={getSortClass('odometer')} onClick={() => handleSort('odometer')}>
+                                                Odometer
+                                            </th>
+                                            <th className={getSortClass('engine')} onClick={() => handleSort('engine')}>
+                                                Engine
+                                            </th>
+                                            <th className={getSortClass('declarations')} onClick={() => handleSort('declarations')}>
+                                                Declarations
+                                            </th>
+                                            <th>Link</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody>
+                                        {paginatedData.map((item, index) => (
+                                            <tr key={index}>
+                                                <td className="thumbnail-cell">
+                                                    {item.image_url ? (
+                                                        <img 
+                                                            src={item.image_url} 
+                                                            alt={item.title || 'Lot image'}
+                                                            className="thumbnail-image"
+                                                            onError={(e) => {
+                                                                e.target.style.display = 'none';
+                                                                e.target.nextSibling.style.display = 'flex';
+                                                            }}
+                                                        />
+                                                    ) : (
+                                                        <div className="no-image">📷</div>
+                                                    )}
+                                                    <div className="no-image" style={{display: 'none'}}>📷</div>
+                                                </td>
+                                                <td className="lot-number">{item.lot_number}</td>
+                                                <td className="truncate" title={item.title}>{item.title}</td>
+                                                <td className="price">{item.starting_bid}</td>
+                                                <td className="price">{item.reserve_price}</td>
+                                                <td>{item.odometer}</td>
+                                                <td>{item.engine}</td>
+                                                <td className="truncate" title={item.declarations}>{item.declarations}</td>
+                                                <td className="link-cell">
+                                                    {item.lot_url && (
+                                                        <a href={item.lot_url} target="_blank" rel="noopener noreferrer">
+                                                            View Details →
+                                                        </a>
+                                                    )}
+                                                </td>
+                                            </tr>
+                                        ))}
+                                    </tbody>
+                                </table>
+                            </div>
+
+                            {itemsPerPage !== 'all' && totalPages > 1 && (
+                                <div className="pagination-controls">
+                                    <div className="pagination-buttons">
+                                        <button 
+                                            className="page-btn" 
+                                            onClick={() => setCurrentPage(1)}
+                                            disabled={currentPage === 1}
+                                        >
+                                            First
+                                        </button>
+                                        <button 
+                                            className="page-btn" 
+                                            onClick={() => setCurrentPage(prev => Math.max(1, prev - 1))}
+                                            disabled={currentPage === 1}
+                                        >
+                                            Previous
+                                        </button>
+                                        <span className="page-info">
+                                            Page {currentPage} of {totalPages}
+                                        </span>
+                                        <button 
+                                            className="page-btn" 
+                                            onClick={() => setCurrentPage(prev => Math.min(totalPages, prev + 1))}
+                                            disabled={currentPage === totalPages}
+                                        >
+                                            Next
+                                        </button>
+                                        <button 
+                                            className="page-btn" 
+                                            onClick={() => setCurrentPage(totalPages)}
+                                            disabled={currentPage === totalPages}
+                                        >
+                                            Last
+                                        </button>
+                                    </div>
+                                    <div className="page-info">
+                                        Showing {startIndex + 1}-{Math.min(endIndex, filteredAndSortedData.length)} of {filteredAndSortedData.length} items
+                                    </div>
+                                </div>
+                            )}
+
+                            <div className="stats">
+                                <div className="stat-item">
+                                    <div className="stat-value">{filteredAndSortedData.length}</div>
+                                    <div className="stat-label">Items Displayed</div>
+                                </div>
+                                <div className="stat-item">
+                                    <div className="stat-value">{data.length}</div>
+                                    <div className="stat-label">Total Items</div>
+                                </div>
+                            </div>
+                        </>
+                    ) : !loading && !error && (
+                        <div className="empty-state">
+                            <div className="empty-state-icon">📊</div>
+                            <h2>No Data Yet</h2>
+                            <p>Enter a URL above and click "Scrape URL" to get started</p>
+                        </div>
+                    )}
+                </div>
+            );
+        }
+
+        ReactDOM.render(<App />, document.getElementById('root'));
+    </script>
+</body>
+</html>
