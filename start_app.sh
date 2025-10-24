@@ -5,6 +5,11 @@ echo "Starting Web Scraper Application"
 echo "========================================================================"
 echo ""
 
+# Generate environment configuration
+echo "0. Generating environment configuration..."
+python3 generate_env.py
+echo ""
+
 # Start the API server in the background
 echo "1. Starting API server on http://localhost:5001..."
 /Users/angelocarlotto/Desktop/github2/scraplot/.venv/bin/python /Users/angelocarlotto/Desktop/github2/scraplot/api.py &

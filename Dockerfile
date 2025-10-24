@@ -29,11 +29,15 @@ COPY . .
 # Expose port (Railway will set PORT env variable)
 EXPOSE 8080
 
-# Create start script
+# Create start script that generates env config and starts servers
 RUN echo '#!/bin/bash\n\
+echo "Generating environment configuration..."\n\
+python3 generate_env.py\n\
+echo "Starting API server..."\n\
 python api.py &\n\
 API_PID=$!\n\
 sleep 2\n\
+echo "Starting web server on port ${PORT:-8080}..."\n\
 python -m http.server ${PORT:-8080} &\n\
 HTTP_PID=$!\n\
 wait $API_PID $HTTP_PID\n\
