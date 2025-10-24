@@ -25,3 +25,8 @@ data/
 # OS
 .DS_Store
 Thumbs.db
+
+# Environment config (auto-generated)
+env.js
+env.local.js
+env.production.js

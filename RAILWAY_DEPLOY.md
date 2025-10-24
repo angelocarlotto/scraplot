@@ -34,26 +34,10 @@ railway init
 railway up
 ```
 
-### 3. Get Your URL
+### 3. Get Your URL & Done! 🎉
 - Railway provides a URL like: `your-app.railway.app`
-- Copy this URL
-
-### 4. Update Frontend
-Edit `index.html` around line 470:
-```javascript
-// Change this:
-const response = await fetch('http://localhost:5001/scrape', {
-
-// To this (replace with YOUR Railway URL):
-const response = await fetch('https://your-app.railway.app/scrape', {
-```
-
-### 5. Redeploy
-```bash
-git add index.html
-git commit -m "Update API URL for production"
-git push
-```
+- **No configuration needed!** The app auto-detects production environment
+- Environment config is generated automatically at startup
 
 ## ✅ Test Your Deployment
 

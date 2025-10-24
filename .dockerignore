@@ -16,6 +16,11 @@ data/*.json
 # Debug files
 debug/
 
+# Environment files (will be generated at build time)
+env.js
+env.local.js
+env.production.js
+
 # Git
 .git/
 .gitignore
