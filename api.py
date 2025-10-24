@@ -247,7 +247,7 @@ def scrape_single_page(url: str, page_num: int, wait_time: int, lock: threading.
         time.sleep(wait_time)
         
         soup = BeautifulSoup(driver.page_source, 'lxml')
-        lot_items = soup.find_all('div', class_='lot')
+        lot_items = soup.find_all('div', class_='lot-card')
         
         lots = []
         
