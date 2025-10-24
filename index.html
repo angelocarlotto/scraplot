@@ -480,11 +480,13 @@
                 setData([]);
                 setScrapingTime(null);
                 setCurrentPage(1);
+                setProgressLogs([]);
+                setCompletedPages(0);
 
                 const startTime = Date.now();
 
                 try {
-                    const response = await fetch(`${API_URL}/scrape`, {
+                    const response = await fetch(`${API_URL}/scrape-stream`, {
                         method: 'POST',
                         headers: {
                             'Content-Type': 'application/json',
@@ -497,21 +499,63 @@
                         })
                     });
 
-                    const result = await response.json();
-                    const endTime = Date.now();
-                    const elapsed = ((endTime - startTime) / 1000).toFixed(2);
-                    setScrapingTime(elapsed);
+                    const reader = response.body.getReader();
+                    const decoder = new TextDecoder();
+                    let buffer = '';
 
-                    if (result.success) {
-                        // Handle both nested and flat response structures
-                        const data = result.data.structured_data || result.data;
-                        const scrapedData = data.lots || [];
-                        const scrapedPages = data.total_pages || 1;
-                        const scrapingTime = data.scraping_time || 'N/A';
-                        setData(scrapedData);
-                        setSuccess(`Successfully scraped ${scrapedData.length} items from ${scrapedPages} page(s) in ${scrapingTime}!`);
-                    } else {
-                        setError(result.error || 'Failed to scrape data');
+                    while (true) {
+                        const { done, value } = await reader.read();
+                        if (done) break;
+
+                        buffer += decoder.decode(value, { stream: true });
+                        const lines = buffer.split('\n');
+                        buffer = lines.pop(); // Keep incomplete line in buffer
+
+                        for (const line of lines) {
+                            if (line.startsWith('data: ')) {
+                                const jsonStr = line.slice(6);
+                                try {
+                                    const event = JSON.parse(jsonStr);
+                                    
+                                    // Add log entry
+                                    setProgressLogs(prev => [...prev, {
+                                        type: event.type,
+                                        message: event.message,
+                                        timestamp: new Date().toLocaleTimeString()
+                                    }]);
+
+                                    // Update progress based on event type
+                                    if (event.type === 'page_complete') {
+                                        setCompletedPages(prev => prev + 1);
+                                    } else if (event.type === 'result' || event.type === 'complete') {
+                                        const endTime = Date.now();
+                                        const elapsed = ((endTime - startTime) / 1000).toFixed(2);
+                                        setScrapingTime(elapsed);
+                                        
+                                        // Handle result data structure
+                                        let lotsData = [];
+                                        let totalPages = 1;
+                                        
+                                        if (event.data) {
+                                            if (event.data.lots) {
+                                                lotsData = event.data.lots;
+                                                totalPages = event.data.total_pages || 1;
+                                            } else if (event.data.structured_data?.lots) {
+                                                lotsData = event.data.structured_data.lots;
+                                                totalPages = event.data.structured_data.total_pages || 1;
+                                            }
+                                        }
+                                        
+                                        setData(lotsData);
+                                        setSuccess(`Successfully scraped ${lotsData.length} items from ${totalPages} page(s) in ${elapsed}s!`);
+                                    } else if (event.type === 'error') {
+                                        setError(event.error || event.message || 'An error occurred');
+                                    }
+                                } catch (e) {
+                                    console.error('Error parsing SSE data:', e);
+                                }
+                            }
+                        }
                     }
                 } catch (err) {
                     setError(`Failed to connect to API at ${API_URL}. Make sure the API server is running.`);
@@ -747,6 +791,62 @@
                         <div className="status loading">
                             <div className="spinner"></div>
                             <span>Scraping data from {url}...</span>
+                        </div>
+                    )}
+
+                    {loading && progressLogs.length > 0 && (
+                        <div style={{
+                            marginTop: '20px',
+                            padding: '20px',
+                            backgroundColor: '#f8f9fa',
+                            borderRadius: '8px',
+                            border: '1px solid #dee2e6'
+                        }}>
+                            <h3 style={{ margin: '0 0 15px 0', color: '#495057', fontSize: '18px' }}>
+                                🔄 Scraping Progress
+                            </h3>
+                            {completedPages > 0 && (
+                                <div style={{
+                                    marginBottom: '15px',
+                                    padding: '10px',
+                                    backgroundColor: '#e7f3ff',
+                                    borderRadius: '6px',
+                                    fontSize: '16px',
+                                    fontWeight: '500',
+                                    color: '#0066cc'
+                                }}>
+                                    📊 Completed Pages: {completedPages}
+                                </div>
+                            )}
+                            <div style={{
+                                maxHeight: '300px',
+                                overflowY: 'auto',
+                                backgroundColor: '#ffffff',
+                                borderRadius: '6px',
+                                border: '1px solid #dee2e6'
+                            }}>
+                                {progressLogs.map((log, index) => (
+                                    <div key={index} style={{
+                                        padding: '8px 12px',
+                                        borderBottom: index < progressLogs.length - 1 ? '1px solid #f0f0f0' : 'none',
+                                        fontSize: '14px',
+                                        fontFamily: 'monospace',
+                                        color: log.type === 'error' ? '#dc3545' : 
+                                               log.type === 'page_complete' ? '#28a745' :
+                                               log.type === 'discovery_complete' ? '#007bff' : '#495057'
+                                    }}>
+                                        <span style={{ color: '#6c757d', marginRight: '8px' }}>
+                                            {log.timestamp}
+                                        </span>
+                                        <span style={{ fontWeight: '500' }}>
+                                            {log.type === 'page_complete' ? '✓' :
+                                             log.type === 'error' ? '✗' :
+                                             log.type === 'discovery_complete' ? '🔍' : '•'}
+                                        </span>
+                                        <span style={{ marginLeft: '8px' }}>{log.message}</span>
+                                    </div>
+                                ))}
+                            </div>
                         </div>
                     )}
 

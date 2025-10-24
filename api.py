@@ -605,6 +605,7 @@ def scrape_stream():
         url = data['url']
         wait_time = data.get('wait_time', 5)
         scrape_all_pages = data.get('scrape_all_pages', False)
+        max_workers = data.get('max_workers', 1)
         
         # Create a unique queue for this request
         progress_queue = queue.Queue()
@@ -616,9 +617,9 @@ def scrape_stream():
             def scrape_task():
                 try:
                     if 'regalauctions.com' in url and scrape_all_pages:
-                        result = scrape_all_auction_pages(url, wait_time, progress_queue=progress_queue)
+                        result = scrape_all_auction_pages(url, wait_time, max_workers, progress_queue=progress_queue)
                     else:
-                        result = scrape_generic_url(url, wait_time, scrape_all_pages)
+                        result = scrape_generic_url(url, wait_time, scrape_all_pages, max_workers)
                     result_container['data'] = result
                     result_container['success'] = True
                 except Exception as e:
