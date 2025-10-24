@@ -551,6 +551,9 @@ def home():
 
 
 if __name__ == '__main__':
+    import os
+    port = int(os.environ.get('PORT', 5001))
+    
     print("="*70)
     print("Starting Web Scraper API...")
     print("="*70)
@@ -559,9 +562,10 @@ if __name__ == '__main__':
     print("  GET  /health   - Health check")
     print("  POST /scrape   - Scrape a URL")
     print("="*70)
+    print(f"\nRunning on port: {port}")
     print("\nExample usage:")
-    print('  curl -X POST http://localhost:5001/scrape \\')
+    print(f'  curl -X POST http://localhost:{port}/scrape \\')
     print('    -H "Content-Type: application/json" \\')
     print('    -d \'{"url": "https://example.com"}\'')
     print("="*70)
-    app.run(debug=True, host='0.0.0.0', port=5001)
+    app.run(debug=False, host='0.0.0.0', port=port)
