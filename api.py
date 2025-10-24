@@ -4,7 +4,7 @@ Accepts a URL and returns scraped data in JSON format
 Also serves static files for the web interface
 """
 
-from flask import Flask, request, jsonify, send_from_directory
+from flask import Flask, request, jsonify, send_from_directory, Response, stream_with_context
 from flask_cors import CORS
 from selenium import webdriver
 from selenium.webdriver.chrome.options import Options
@@ -14,12 +14,18 @@ from bs4 import BeautifulSoup
 import time
 import re
 import os
+import json
 from urllib.parse import urlparse, parse_qs, urlencode, urlunparse
 from concurrent.futures import ThreadPoolExecutor, as_completed
 import threading
+import queue
 
 app = Flask(__name__, static_folder='.')
 CORS(app)  # Enable CORS for all routes
+
+# Global progress tracker
+progress_queues = {}
+progress_lock = threading.Lock()
 
 
 def create_driver(headless=True):
@@ -206,47 +212,43 @@ def discover_total_pages(base_url, wait_time=5):
         driver.quit()
 
 
-def scrape_single_page(url: str, page_num: int, wait_time: int, lock: threading.Lock) -> list:
+def scrape_single_page(url: str, page_num: int, wait_time: int, lock: threading.Lock, progress_queue=None) -> list:
     """
-    Scrape a single page and return lots
+    Scrape a single page in a thread
     
     Args:
         url: Base URL
         page_num: Page number to scrape
         wait_time: Wait time for JavaScript
-        lock: Thread lock for console output
+        lock: Thread lock for printing
+        progress_queue: Queue for sending progress updates
         
     Returns:
-        List of lots from the page
+        List of lots from this page
     """
+    # Modify URL to include page number
+    parsed = urlparse(url)
+    query_params = parse_qs(parsed.query)
+    query_params['page'] = [str(page_num)]
+    new_query = urlencode(query_params, doseq=True)
+    page_url = urlunparse((parsed.scheme, parsed.netloc, parsed.path, parsed.params, new_query, parsed.fragment))
+    
+    if progress_queue:
+        progress_queue.put({
+            'type': 'page_start',
+            'page': page_num,
+            'message': f'Starting page {page_num}...'
+        })
+    
     driver = create_driver()
     
     try:
-        # Construct page URL
-        parsed = urlparse(url)
-        query_params = parse_qs(parsed.query)
-        query_params['page'] = [str(page_num)]
-        new_query = urlencode(query_params, doseq=True)
-        page_url = urlunparse((
-            parsed.scheme,
-            parsed.netloc,
-            parsed.path,
-            parsed.params,
-            new_query,
-            parsed.fragment
-        ))
-        
-        with lock:
-            print(f"[Thread] Scraping page {page_num}: {page_url}")
-        
         driver.get(page_url)
         time.sleep(wait_time)
         
-        page_source = driver.page_source
-        soup = BeautifulSoup(page_source, 'lxml')
+        soup = BeautifulSoup(driver.page_source, 'lxml')
+        lot_items = soup.find_all('div', class_='lot')
         
-        # Extract lots
-        lot_items = soup.find_all('div', class_='lot-card')
         lots = []
         
         for item in lot_items:
@@ -258,17 +260,34 @@ def scrape_single_page(url: str, page_num: int, wait_time: int, lock: threading.
         with lock:
             print(f"[Thread] Page {page_num}: Found {len(lots)} lots")
         
+        if progress_queue:
+            progress_queue.put({
+                'type': 'page_complete',
+                'page': page_num,
+                'lots_found': len(lots),
+                'message': f'Page {page_num}: Found {len(lots)} lots'
+            })
+        
         return lots
         
     except Exception as e:
         with lock:
             print(f"[Thread] Error on page {page_num}: {e}")
+        
+        if progress_queue:
+            progress_queue.put({
+                'type': 'page_error',
+                'page': page_num,
+                'error': str(e),
+                'message': f'Error on page {page_num}: {str(e)}'
+            })
+        
         return []
     finally:
         driver.quit()
 
 
-def scrape_all_auction_pages(url: str, wait_time: int = 5, max_workers: int = 10) -> dict:
+def scrape_all_auction_pages(url: str, wait_time: int = 5, max_workers: int = 10, progress_queue=None) -> dict:
     """
     Automatically discover total pages and scrape all of them
     
@@ -276,25 +295,47 @@ def scrape_all_auction_pages(url: str, wait_time: int = 5, max_workers: int = 10
         url: Base URL to scrape
         wait_time: Wait time for JavaScript
         max_workers: Maximum concurrent threads
+        progress_queue: Queue for sending progress updates
         
     Returns:
         Dictionary with all scraped data
     """
+    if progress_queue:
+        progress_queue.put({
+            'type': 'discovery_start',
+            'message': 'Discovering total pages...'
+        })
+    
     print(f"Discovering total pages for: {url}")
     total_pages = discover_total_pages(url, wait_time)
     print(f"Found {total_pages} pages to scrape")
+    
+    if progress_queue:
+        progress_queue.put({
+            'type': 'discovery_complete',
+            'total_pages': total_pages,
+            'message': f'Found {total_pages} pages to scrape'
+        })
     
     all_lots = []
     lock = threading.Lock()
     
     print(f"Starting parallel scraping with {max_workers} threads...")
     
+    if progress_queue:
+        progress_queue.put({
+            'type': 'scraping_start',
+            'total_pages': total_pages,
+            'max_workers': max_workers,
+            'message': f'Starting parallel scraping with {max_workers} threads...'
+        })
+    
     start_time = time.time()
     
     # Use ThreadPoolExecutor for parallel scraping
     with ThreadPoolExecutor(max_workers=max_workers) as executor:
         futures = {
-            executor.submit(scrape_single_page, url, page, wait_time, lock): page 
+            executor.submit(scrape_single_page, url, page, wait_time, lock, progress_queue): page 
             for page in range(1, total_pages + 1)
         }
         
@@ -311,6 +352,14 @@ def scrape_all_auction_pages(url: str, wait_time: int = 5, max_workers: int = 10
     
     print(f"Scraping completed in {elapsed_time:.2f} seconds")
     print(f"Total lots scraped: {len(all_lots)}")
+    
+    if progress_queue:
+        progress_queue.put({
+            'type': 'scraping_complete',
+            'total_lots': len(all_lots),
+            'elapsed_time': elapsed_time,
+            'message': f'Scraping completed! Found {len(all_lots)} lots in {elapsed_time:.2f}s'
+        })
     
     return {
         'type': 'regal_auctions',
@@ -521,6 +570,94 @@ def scrape_endpoint():
             'success': True,
             'data': result
         })
+        
+    except Exception as e:
+        return jsonify({
+            'success': False,
+            'error': str(e)
+        }), 500
+
+
+@app.route('/scrape-stream', methods=['POST'])
+def scrape_stream():
+    """
+    Scrape with real-time progress updates via Server-Sent Events (SSE)
+    
+    Request body:
+    {
+        "url": "https://example.com",
+        "wait_time": 5,
+        "scrape_all_pages": true
+    }
+    """
+    try:
+        data = request.get_json()
+        
+        if not data or 'url' not in data:
+            return jsonify({
+                'success': False,
+                'error': 'URL is required in request body'
+            }), 400
+        
+        url = data['url']
+        wait_time = data.get('wait_time', 5)
+        scrape_all_pages = data.get('scrape_all_pages', False)
+        
+        # Create a unique queue for this request
+        progress_queue = queue.Queue()
+        
+        def generate():
+            # Start scraping in a background thread
+            result_container = {}
+            
+            def scrape_task():
+                try:
+                    if 'regalauctions.com' in url and scrape_all_pages:
+                        result = scrape_all_auction_pages(url, wait_time, progress_queue=progress_queue)
+                    else:
+                        result = scrape_generic_url(url, wait_time, scrape_all_pages)
+                    result_container['data'] = result
+                    result_container['success'] = True
+                except Exception as e:
+                    result_container['error'] = str(e)
+                    result_container['success'] = False
+                finally:
+                    progress_queue.put({'type': 'done'})
+            
+            # Start the scraping thread
+            thread = threading.Thread(target=scrape_task)
+            thread.start()
+            
+            # Stream progress updates
+            while True:
+                try:
+                    update = progress_queue.get(timeout=30)
+                    
+                    if update['type'] == 'done':
+                        # Send final result
+                        if result_container.get('success'):
+                            yield f"data: {json.dumps({'type': 'result', 'success': True, 'data': result_container['data']})}\n\n"
+                        else:
+                            yield f"data: {json.dumps({'type': 'error', 'success': False, 'error': result_container.get('error', 'Unknown error')})}\n\n"
+                        break
+                    else:
+                        # Send progress update
+                        yield f"data: {json.dumps(update)}\n\n"
+                        
+                except queue.Empty:
+                    # Send keepalive
+                    yield f"data: {json.dumps({'type': 'keepalive'})}\n\n"
+            
+            thread.join()
+        
+        return Response(
+            stream_with_context(generate()),
+            mimetype='text/event-stream',
+            headers={
+                'Cache-Control': 'no-cache',
+                'X-Accel-Buffering': 'no'
+            }
+        )
         
     except Exception as e:
         return jsonify({

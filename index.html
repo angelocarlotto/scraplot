@@ -464,6 +464,8 @@
                 minPrice: '',
                 maxPrice: ''
             });
+            const [progressLogs, setProgressLogs] = useState([]);
+            const [completedPages, setCompletedPages] = useState(0);
 
             const handleScrape = async () => {
                 if (!url.trim()) {
@@ -502,10 +504,10 @@
                         // Handle both nested and flat response structures
                         const data = result.data.structured_data || result.data;
                         const scrapedData = data.lots || [];
-                        const totalPages = data.total_pages || 1;
+                        const scrapedPages = data.total_pages || 1;
                         const scrapingTime = data.scraping_time || 'N/A';
                         setData(scrapedData);
-                        setSuccess(`Successfully scraped ${scrapedData.length} items from ${totalPages} page(s) in ${scrapingTime}!`);
+                        setSuccess(`Successfully scraped ${scrapedData.length} items from ${scrapedPages} page(s) in ${scrapingTime}!`);
                     } else {
                         setError(result.error || 'Failed to scrape data');
                     }
